@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EdgeSign MVP | Team Future_Builders</title>
+  <meta name="description" content="Real-time AR Sign Language Translator powered by MediaPipe Hands — EdgeSign MVP by Team Future_Builders." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- MediaPipe CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* ═══════════════════════════════════════════
+       ROOT TOKENS & RESET
+    ═══════════════════════════════════════════ */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-void:        #020408;
+      --bg-deep:        #05090f;
+      --bg-panel:       rgba(4, 14, 24, 0.82);
+      --bg-glass:       rgba(6, 20, 35, 0.65);
+      --bg-glass-light: rgba(8, 30, 50, 0.50);
+
+      --cyan-bright:    #00f5ff;
+      --cyan-mid:       #00c8d7;
+      --cyan-dim:       #007a88;
+      --green-neon:     #39ff14;
+      --green-mid:      #1abc2e;
+      --amber-warn:     #ffbb00;
+      --red-alert:      #ff3c5c;
+      --white:          #e8f4f8;
+      --white-dim:      #8aaabb;
+      --white-muted:    #3a5060;
+
+      --border-glass:   rgba(0, 245, 255, 0.18);
+      --border-glow:    rgba(0, 245, 255, 0.55);
+      --shadow-neon:    0 0 12px rgba(0, 245, 255, 0.35), 0 0 40px rgba(0, 245, 255, 0.12);
+      --shadow-panel:   0 8px 40px rgba(0, 0, 0, 0.7), 0 2px 0 rgba(0, 245, 255, 0.08) inset;
+
+      --font-display:   'Orbitron', sans-serif;
+      --font-body:      'Inter', sans-serif;
+      --font-mono:      'JetBrains Mono', monospace;
+
+      --header-h:       64px;
+      --radius-sm:      8px;
+      --radius-md:      14px;
+      --radius-lg:      20px;
+
+      --transition-fast: 150ms ease;
+      --transition-med:  300ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-void);
+      color: var(--white);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ═══════════════════════════════════════════
+       SCANLINE OVERLAY (aesthetic)
+    ═══════════════════════════════════════════ */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 245, 255, 0.012) 2px,
+        rgba(0, 245, 255, 0.012) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ═══════════════════════════════════════════
+       LAYOUT SHELL
+    ═══════════════════════════════════════════ */
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* ═══════════════════════════════════════════
+       HEADER BAR
+    ═══════════════════════════════════════════ */
+    #header {
+      position: relative;
+      z-index: 100;
+      width: 100%;
+      height: var(--header-h);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(0, 245, 255, 0.10) inset;
+    }
+
+    #header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan-bright), var(--cyan-mid), transparent);
+      opacity: 0.7;
+    }
+
+    /* Logo / Title cluster */
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--cyan-dim), var(--cyan-bright) 80%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 18px rgba(0, 245, 255, 0.5);
+      flex-shrink: 0;
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      fill: var(--bg-void);
+    }
+
+    .brand-text h1 {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      color: var(--white);
+      line-height: 1.1;
+      text-shadow: 0 0 20px rgba(0, 245, 255, 0.6);
+    }
+
+    .brand-text small {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--cyan-mid);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    /* Header centre pill */
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px 5px 10px;
+      border-radius: 100px;
+      background: rgba(57, 255, 20, 0.08);
+      border: 1px solid rgba(57, 255, 20, 0.30);
+      backdrop-filter: blur(8px);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green-neon);
+      box-shadow: 0 0 10px var(--green-neon);
+      animation: pulse-dot 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { transform: scale(1);   opacity: 1;   box-shadow: 0 0 10px var(--green-neon); }
+      50%       { transform: scale(1.4); opacity: 0.7; box-shadow: 0 0 22px var(--green-neon), 0 0 40px rgba(57,255,20,0.3); }
+    }
+
+    .live-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      color: var(--green-neon);
+    }
+
+    /* Header right cluster */
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .model-chip {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 4px 12px;
+      border-radius: 100px;
+      border: 1px solid var(--border-glass);
+      color: var(--white-dim);
+      background: rgba(0,0,0,0.3);
+      letter-spacing: 0.1em;
+    }
+
+    /* ═══════════════════════════════════════════
+       VIEWPORT AREA (fills remaining height)
+    ═══════════════════════════════════════════ */
+    #viewport {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+      background: #000;
+    }
+
+    /* Hidden raw video source */
+    #input-video {
+      display: none;
+    }
+
+    /* AR canvas fills the viewport */
+    #output-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* ═══════════════════════════════════════════
+       AR SUBTITLE BOX
+    ═══════════════════════════════════════════ */
+    #subtitle-box {
+      position: absolute;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      min-width: 340px;
+      max-width: min(780px, 90vw);
+      padding: 18px 36px;
+      border-radius: var(--radius-lg);
+      background: var(--bg-glass);
+      backdrop-filter: blur(28px) saturate(1.6);
+      -webkit-backdrop-filter: blur(28px) saturate(1.6);
+      border: 1px solid var(--border-glow);
+      box-shadow: var(--shadow-neon), 0 16px 60px rgba(0,0,0,0.6);
+      text-align: center;
+      transition: opacity var(--transition-med), transform var(--transition-med);
+      opacity: 1;
+
+      /* Glowing top edge accent */
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 10%; right: 10%;
+        height: 2px;
+        border-radius: 100px;
+        background: linear-gradient(90deg, transparent, var(--cyan-bright), transparent);
+        box-shadow: 0 0 14px var(--cyan-bright);
+      }
+    }
+
+    #subtitle-box.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(12px);
+      pointer-events: none;
+    }
+
+    #subtitle-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.20em;
+      color: var(--cyan-mid);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    #subtitle-label::before,
+    #subtitle-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan-dim));
+      max-width: 50px;
+    }
+    #subtitle-label::after {
+      background: linear-gradient(90deg, var(--cyan-dim), transparent);
+    }
+
+    #subtitle-text {
+      font-family: var(--font-body);
+      font-size: clamp(22px, 3.5vw, 38px);
+      font-weight: 600;
+      color: var(--white);
+      letter-spacing: 0.04em;
+      line-height: 1.2;
+      text-shadow: 0 0 30px rgba(0, 245, 255, 0.4), 0 2px 8px rgba(0,0,0,0.8);
+      min-height: 1.3em;
+      transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    #subtitle-text.flash {
+      animation: text-flash 0.45s ease forwards;
+    }
+
+    @keyframes text-flash {
+      0%   { opacity: 1; transform: scale(1);    filter: blur(0);    }
+      30%  { opacity: 0; transform: scale(0.96); filter: blur(4px);  }
+      70%  { opacity: 0; transform: scale(1.02); filter: blur(2px);  }
+      100% { opacity: 1; transform: scale(1);    filter: blur(0);    }
+    }
+
+    #subtitle-confidence {
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--cyan-dim);
+      letter-spacing: 0.15em;
+    }
+
+    /* Confidence bar */
+    .conf-bar-track {
+      width: 100%;
+      height: 3px;
+      background: rgba(0, 245, 255, 0.12);
+      border-radius: 100px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .conf-bar-fill {
+      height: 100%;
+      border-radius: 100px;
+      background: linear-gradient(90deg, var(--cyan-dim), var(--cyan-bright));
+      box-shadow: 0 0 8px var(--cyan-mid);
+      width: 0%;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* ═══════════════════════════════════════════
+       DIAGNOSTICS PANEL
+    ═══════════════════════════════════════════ */
+    #diagnostics {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 50;
+      width: 236px;
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      backdrop-filter: blur(24px) saturate(1.5);
+      -webkit-backdrop-filter: blur(24px) saturate(1.5);
+      border: 1px solid var(--border-glass);
+      box-shadow: var(--shadow-panel);
+      overflow: hidden;
+      font-family: var(--font-mono);
+    }
+
+    .diag-header {
+      padding: 10px 16px;
+      background: rgba(0, 245, 255, 0.06);
+      border-bottom: 1px solid var(--border-glass);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .diag-title {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      color: var(--cyan-mid);
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    .diag-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green-neon);
+      box-shadow: 0 0 8px var(--green-neon);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .diag-body {
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .diag-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .diag-key {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--white-dim);
+    }
+
+    .diag-val {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--cyan-bright);
+      letter-spacing: 0.05em;
+      text-align: right;
+    }
+
+    .diag-val.ok   { color: var(--green-neon);  text-shadow: 0 0 8px var(--green-neon);  }
+    .diag-val.warn { color: var(--amber-warn);  text-shadow: 0 0 8px var(--amber-warn);  }
+    .diag-val.off  { color: var(--white-muted); text-shadow: none; }
+
+    /* Mini spark line (decorative) */
+    .diag-spark {
+      margin-top: 4px;
+      height: 28px;
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      padding: 0 2px;
+    }
+
+    .spark-bar {
+      flex: 1;
+      background: var(--cyan-dim);
+      border-radius: 2px 2px 0 0;
+      opacity: 0.6;
+      animation: spark-anim var(--d, 1.2s) ease-in-out infinite alternate;
+    }
+
+    @keyframes spark-anim {
+      from { transform: scaleY(0.3); opacity: 0.4; }
+      to   { transform: scaleY(1);   opacity: 0.85; }
+    }
+
+    .diag-divider {
+      height: 1px;
+      background: var(--border-glass);
+      margin: 2px 0;
+    }
+
+    /* ═══════════════════════════════════════════
+       CORNER HUD ELEMENTS
+    ═══════════════════════════════════════════ */
+    .hud-corner {
+      position: absolute;
+      z-index: 40;
+      pointer-events: none;
+    }
+
+    .hud-corner--tl { top: 20px;  left: 20px; }
+    .hud-corner--bl { bottom: 100px; left: 20px; }
+
+    .hud-corner-bracket {
+      width: 42px;
+      height: 42px;
+      border-color: var(--cyan-mid);
+      border-style: solid;
+      opacity: 0.5;
+    }
+
+    .hud-corner--tl .hud-corner-bracket {
+      border-width: 2px 0 0 2px;
+      border-radius: 4px 0 0 0;
+    }
+
+    .hud-corner--bl .hud-corner-bracket {
+      border-width: 0 0 2px 2px;
+      border-radius: 0 0 0 4px;
+    }
+
+    /* Top-left info chip */
+    .hud-info-chip {
+      position: absolute;
+      top: 20px;
+      left: 74px;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--white-dim);
+      letter-spacing: 0.12em;
+      pointer-events: none;
+    }
+
+    .hud-info-chip span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid var(--white-muted);
+    }
+
+    /* ═══════════════════════════════════════════
+       CROSSHAIR / TARGETING RETICLE
+    ═══════════════════════════════════════════ */
+    #reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80px;
+      height: 80px;
+      pointer-events: none;
+      z-index: 35;
+      opacity: 0.25;
+      transition: opacity var(--transition-med);
+    }
+
+    #reticle.active {
+      opacity: 0;
+    }
+
+    #reticle svg {
+      width: 100%;
+      height: 100%;
+      animation: reticle-spin 12s linear infinite;
+    }
+
+    @keyframes reticle-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    /* ═══════════════════════════════════════════
+       FORCE DEMO BUTTON
+    ═══════════════════════════════════════════ */
+    #force-demo-btn {
+      position: absolute;
+      bottom: 120px;
+      right: 20px;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 20px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(0, 245, 255, 0.40);
+      background: rgba(0, 30, 45, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: var(--cyan-bright);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all var(--transition-med);
+      box-shadow: 0 0 0 0 rgba(0, 245, 255, 0);
+    }
+
+    #force-demo-btn:hover {
+      background: rgba(0, 50, 70, 0.90);
+      border-color: var(--cyan-bright);
+      box-shadow: 0 0 20px rgba(0, 245, 255, 0.25), 0 4px 20px rgba(0,0,0,0.5);
+      transform: translateY(-1px);
+    }
+
+    #force-demo-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 0 30px rgba(0, 245, 255, 0.45);
+    }
+
+    #force-demo-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .btn-icon {
+      width: 16px;
+      height: 16px;
+      opacity: 0.9;
+    }
+
+    /* Ripple on button press */
+    #force-demo-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(circle, rgba(0,245,255,0.15) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    #force-demo-btn:active::after {
+      opacity: 1;
+    }
+
+    /* ═══════════════════════════════════════════
+       CAMERA PERMISSION / LOADING STATES
+    ═══════════════════════════════════════════ */
+    #splash-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      background: radial-gradient(ellipse at 50% 30%, rgba(0,60,80,0.6) 0%, var(--bg-void) 70%);
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+
+    #splash-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .splash-logo {
+      width: 90px;
+      height: 90px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #003a50 0%, #00c8d7 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 60px rgba(0, 245, 255, 0.4), 0 0 120px rgba(0, 200, 215, 0.15);
+      animation: splash-breathe 2.5s ease-in-out infinite;
+    }
+
+    @keyframes splash-breathe {
+      0%, 100% { box-shadow: 0 0 60px rgba(0, 245, 255, 0.4), 0 0 120px rgba(0, 200, 215, 0.15); }
+      50%       { box-shadow: 0 0 100px rgba(0, 245, 255, 0.65), 0 0 160px rgba(0, 200, 215, 0.25); }
+    }
+
+    .splash-logo svg { width: 52px; height: 52px; fill: white; }
+
+    .splash-title {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-align: center;
+      background: linear-gradient(135deg, #fff 30%, var(--cyan-bright));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-shadow: none;
+    }
+
+    .splash-sub {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--cyan-mid);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .splash-loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .loader-track {
+      width: 260px;
+      height: 3px;
+      background: rgba(0, 245, 255, 0.12);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+
+    .loader-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--cyan-dim), var(--cyan-bright));
+      border-radius: 100px;
+      box-shadow: 0 0 12px var(--cyan-bright);
+      animation: loader-progress 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+
+    @keyframes loader-progress {
+      0%   { width: 0%; }
+      40%  { width: 65%; }
+      80%  { width: 88%; }
+      100% { width: 100%; }
+    }
+
+    .loader-text {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--white-dim);
+      letter-spacing: 0.14em;
+    }
+
+    /* Permission error state */
+    #perm-error {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 20px 28px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 60, 92, 0.35);
+      background: rgba(40, 0, 12, 0.7);
+      max-width: 400px;
+      text-align: center;
+    }
+
+    #perm-error.visible { display: flex; }
+
+    .perm-error-title {
+      font-family: var(--font-display);
+      font-size: 14px;
+      color: var(--red-alert);
+      letter-spacing: 0.1em;
+    }
+
+    .perm-error-msg {
+      font-size: 13px;
+      color: var(--white-dim);
+      line-height: 1.5;
+    }
+
+    #retry-btn {
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--red-alert);
+      background: transparent;
+      color: var(--red-alert);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    #retry-btn:hover {
+      background: rgba(255, 60, 92, 0.12);
+    }
+
+    /* ═══════════════════════════════════════════
+       HAND TRACKING GLOSS RING
+    ═══════════════════════════════════════════ */
+    #gloss-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      border: 2px solid var(--cyan-bright);
+      box-shadow: 0 0 30px var(--cyan-bright), inset 0 0 30px rgba(0,245,255,0.08);
+      pointer-events: none;
+      z-index: 36;
+      transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.5s ease;
+      opacity: 0;
+    }
+
+    #gloss-ring.visible {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+      animation: ring-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes ring-pulse {
+      0%, 100% { box-shadow: 0 0 20px var(--cyan-bright), inset 0 0 20px rgba(0,245,255,0.06); }
+      50%       { box-shadow: 0 0 50px var(--cyan-bright), inset 0 0 40px rgba(0,245,255,0.12); }
+    }
+
+    /* ═══════════════════════════════════════════
+       FOOTER STATUS BAR
+    ═══════════════════════════════════════════ */
+    #status-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 26px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: rgba(2, 4, 8, 0.85);
+      border-top: 1px solid var(--border-glass);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--white-muted);
+      letter-spacing: 0.12em;
+    }
+
+    .status-left, .status-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-dot-sm {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green-neon);
+    }
+
+    /* ═══════════════════════════════════════════
+       MEDIAPIPE CUSTOM LANDMARK COLORS
+    ═══════════════════════════════════════════ */
+    /* Applied via JS drawing utils options */
+
+    /* ═══════════════════════════════════════════
+       RESPONSIVE TWEAKS
+    ═══════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      :root { --header-h: 54px; }
+      .brand-text h1 { font-size: 12px; }
+      .model-chip { display: none; }
+      #diagnostics { width: 200px; }
+      #subtitle-text { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── HEADER ─────────────────────────────── -->
+  <header id="header">
+    <div class="header-brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 3a1 1 0 011-1h1V1a1 1 0 012 0v1h1a1 1 0 011 1v2h1.5a1 1 0 010 2H15v1.382l2.447 4.894A1 1 0 0117 13H7a1 1 0 01-.447-1.894L9 6.382V5H7.5a1 1 0 010-2H8V3zm2 0v3.618l-2.236 4.472A.5.5 0 008 12h8a.5.5 0 00.447-.724L14 6.618V3h-4z"/>
+          <path d="M5 14a1 1 0 011-1h12a1 1 0 110 2H6a1 1 0 01-1-1zM4 18a2 2 0 012-2h12a2 2 0 012 2v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1z"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>EdgeSign MVP</h1>
+        <small>Team Future_Builders</small>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="live-badge">
+        <div class="live-dot" id="live-dot"></div>
+        <span class="live-label">LIVE</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <span class="model-chip">MediaPipe Hands v0.4</span>
+      <span class="model-chip" id="timestamp-chip">—</span>
+    </div>
+  </header>
+
+  <!-- ── MAIN VIEWPORT ─────────────────────── -->
+  <main id="viewport">
+
+    <!-- Raw video (hidden, fed to MediaPipe) -->
+    <video id="input-video" playsinline autoplay muted></video>
+
+    <!-- AR Canvas (rendered output) -->
+    <canvas id="output-canvas"></canvas>
+
+    <!-- Targeting reticle (shown when no hand) -->
+    <div id="reticle">
+      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="40" cy="40" r="38" stroke="#00f5ff" stroke-width="0.8" stroke-dasharray="4 6" opacity="0.6"/>
+        <circle cx="40" cy="40" r="28" stroke="#00c8d7" stroke-width="0.5" stroke-dasharray="2 8" opacity="0.4"/>
+        <line x1="40" y1="8"  x2="40" y2="20" stroke="#00f5ff" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="40" y1="60" x2="40" y2="72" stroke="#00f5ff" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="8"  y1="40" x2="20" y2="40" stroke="#00f5ff" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="60" y1="40" x2="72" y2="40" stroke="#00f5ff" stroke-width="1.2" stroke-linecap="round"/>
+        <circle cx="40" cy="40" r="3" fill="#00f5ff" opacity="0.7"/>
+      </svg>
+    </div>
+
+    <!-- Gloss detection ring -->
+    <div id="gloss-ring"></div>
+
+    <!-- Corner HUD brackets -->
+    <div class="hud-corner hud-corner--tl">
+      <div class="hud-corner-bracket"></div>
+    </div>
+    <div class="hud-corner hud-corner--bl">
+      <div class="hud-corner-bracket"></div>
+    </div>
+
+    <!-- HUD info chips (top-left) -->
+    <div class="hud-info-chip">
+      <span>📷 CAM</span>
+      <span id="fps-chip">30 FPS</span>
+    </div>
+
+    <!-- Diagnostics Panel -->
+    <aside id="diagnostics" role="complementary" aria-label="Diagnostics Panel">
+      <div class="diag-header">
+        <span class="diag-title">Diagnostics</span>
+        <div class="diag-status-dot"></div>
+      </div>
+      <div class="diag-body">
+        <div class="diag-row">
+          <span class="diag-key">Inference Latency</span>
+          <span class="diag-val" id="diag-latency">~18ms</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">Frame Rate</span>
+          <span class="diag-val" id="diag-fps">30 FPS</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">Model Complexity</span>
+          <span class="diag-val">Full (1)</span>
+        </div>
+        <div class="diag-divider"></div>
+        <div class="diag-row">
+          <span class="diag-key">Hand Detected</span>
+          <span class="diag-val off" id="diag-hand">No</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">Hands Count</span>
+          <span class="diag-val off" id="diag-hand-count">0</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">Current Gloss</span>
+          <span class="diag-val warn" id="diag-gloss">IDLE</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-key">Confidence</span>
+          <span class="diag-val" id="diag-confidence">—</span>
+        </div>
+        <div class="diag-divider"></div>
+        <!-- Decorative spark bars -->
+        <div class="diag-spark" id="spark-container" aria-hidden="true">
+          <!-- JS will populate these -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Force Demo Button -->
+    <button id="force-demo-btn" aria-label="Force Demo Sequence">
+      <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+      Force Demo Sequence
+    </button>
+
+    <!-- AR Subtitle Box -->
+    <div id="subtitle-box" class="hidden" role="status" aria-live="polite" aria-label="Sign Language Translation">
+      <div id="subtitle-label">AR Translation</div>
+      <div id="subtitle-text"></div>
+      <div id="subtitle-confidence">Confidence: <span id="conf-value">—</span></div>
+      <div class="conf-bar-track">
+        <div class="conf-bar-fill" id="conf-bar"></div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+      <div class="status-left">
+        <div class="status-item">
+          <div class="status-dot-sm"></div>
+          <span>EdgeSign Runtime v1.0.0</span>
+        </div>
+        <span id="status-mode">Initializing…</span>
+      </div>
+      <div class="status-right">
+        <span id="status-coords">Hand: —</span>
+        <span>MediaPipe Hands · Client-side · WebGL</span>
+      </div>
+    </div>
+
+    <!-- Splash / Loading Screen -->
+    <div id="splash-screen">
+      <div class="splash-logo">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <!-- Stylized hand/wave icon -->
+          <path d="M12 2a1 1 0 011 1v6h1a2 2 0 012 2v4a6 6 0 01-12 0V8a2 2 0 012-2h1V3a1 1 0 011-1h4zm-1 2H9v5H7a0 0 0 000 0v7a4 4 0 008 0v-4a0 0 0 000 0h-1V7h-3V4z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="splash-title">EdgeSign MVP</div>
+        <div class="splash-sub">Team Future_Builders · AR Sign Translator</div>
+      </div>
+      <div class="splash-loader">
+        <div class="loader-track"><div class="loader-fill"></div></div>
+        <div class="loader-text" id="loader-status">Loading MediaPipe Hands…</div>
+      </div>
+      <div id="perm-error">
+        <div class="perm-error-title">⚠ Camera Access Required</div>
+        <div class="perm-error-msg">Please allow camera access in your browser and reload to use real-time hand tracking. You can still use the Force Demo button.</div>
+        <button id="retry-btn">Retry Access</button>
+      </div>
+    </div>
+
+  </main><!-- /viewport -->
+</div><!-- /app -->
+
+<!-- ════════════════════════════════════════════
+     JAVASCRIPT — MediaPipe Pipeline + Demo Engine
+════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ─── DOM REFS ────────────────────────────── */
+  const videoEl          = document.getElementById('input-video');
+  const canvasEl         = document.getElementById('output-canvas');
+  const ctx              = canvasEl.getContext('2d');
+  const subtitleBox      = document.getElementById('subtitle-box');
+  const subtitleText     = document.getElementById('subtitle-text');
+  const subtitleConfEl   = document.getElementById('subtitle-confidence');
+  const confBar          = document.getElementById('conf-bar');
+  const confValue        = document.getElementById('conf-value');
+  const diagHand         = document.getElementById('diag-hand');
+  const diagHandCount    = document.getElementById('diag-hand-count');
+  const diagGloss        = document.getElementById('diag-gloss');
+  const diagLatency      = document.getElementById('diag-latency');
+  const diagFps          = document.getElementById('diag-fps');
+  const diagConfidence   = document.getElementById('diag-confidence');
+  const forceDemoBtn     = document.getElementById('force-demo-btn');
+  const splashScreen     = document.getElementById('splash-screen');
+  const loaderStatus     = document.getElementById('loader-status');
+  const permError        = document.getElementById('perm-error');
+  const retryBtn         = document.getElementById('retry-btn');
+  const reticle          = document.getElementById('reticle');
+  const glossRing        = document.getElementById('gloss-ring');
+  const fpsChip          = document.getElementById('fps-chip');
+  const statusMode       = document.getElementById('status-mode');
+  const statusCoords     = document.getElementById('status-coords');
+  const timestampChip    = document.getElementById('timestamp-chip');
+  const sparkContainer   = document.getElementById('spark-container');
+
+  /* ─── STATE ───────────────────────────────── */
+  const state = {
+    handDetected:        false,
+    handFirstSeenAt:     null,
+    demoRunning:         false,
+    demoIndex:           0,
+    demoTimeout:         null,
+    frameCount:          0,
+    lastFpsTime:         performance.now(),
+    fps:                 0,
+    latency:             18,
+    handLandmarks:       null,
+  };
+
+  /* ─── DEMO SEQUENCE ───────────────────────── */
+  const DEMO_SEQUENCE = [
+    { text: 'Initializing…',    conf: 42,  gloss: 'INIT'   },
+    { text: 'Hello',            conf: 97,  gloss: 'HELLO'  },
+    { text: 'My name is',       conf: 94,  gloss: 'NAME'   },
+    { text: 'Aman',             conf: 99,  gloss: 'AMAN'   },
+    { text: 'Do you need help?',conf: 91,  gloss: 'HELP?'  },
+  ];
+  const DEMO_INTERVAL_MS = 1500;
+
+  /* ─── CANVAS RESIZE ───────────────────────── */
+  function resizeCanvas() {
+    const vp = document.getElementById('viewport');
+    canvasEl.width  = vp.clientWidth;
+    canvasEl.height = vp.clientHeight;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  /* ─── TIMESTAMP CHIP ──────────────────────── */
+  function updateTimestamp() {
+    const now = new Date();
+    timestampChip.textContent = now.toLocaleTimeString('en-US', { hour12: false });
+  }
+  updateTimestamp();
+  setInterval(updateTimestamp, 1000);
+
+  /* ─── SPARK BARS (decorative) ─────────────── */
+  (function buildSparks() {
+    const BARS = 18;
+    for (let i = 0; i < BARS; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'spark-bar';
+      const h = Math.random() * 22 + 6;
+      bar.style.height = h + 'px';
+      bar.style.setProperty('--d', (0.7 + Math.random() * 1.4).toFixed(2) + 's');
+      bar.style.animationDelay = (Math.random() * 1.2).toFixed(2) + 's';
+      sparkContainer.appendChild(bar);
+    }
+  })();
+
+  /* ─── SUBTITLE DISPLAY ────────────────────── */
+  function showSubtitle(entry) {
+    subtitleBox.classList.remove('hidden');
+    subtitleText.classList.remove('flash');
+    // Trigger reflow to restart animation
+    void subtitleText.offsetWidth;
+    subtitleText.classList.add('flash');
+    subtitleText.textContent = entry.text;
+    const pct = entry.conf + '%';
+    confValue.textContent = pct;
+    confBar.style.width = pct;
+    diagGloss.textContent = entry.gloss;
+    diagConfidence.textContent = pct;
+    diagGloss.className = 'diag-val ok';
+  }
+
+  function hideSubtitle() {
+    subtitleBox.classList.add('hidden');
+    diagGloss.textContent = 'IDLE';
+    diagGloss.className = 'diag-val warn';
+    diagConfidence.textContent = '—';
+  }
+
+  /* ─── DEMO ENGINE ─────────────────────────── */
+  function startDemoSequence() {
+    if (state.demoRunning) return;
+    state.demoRunning = true;
+    state.demoIndex   = 0;
+    forceDemoBtn.disabled = true;
+    glossRing.classList.add('visible');
+
+    function step() {
+      if (state.demoIndex >= DEMO_SEQUENCE.length) {
+        // Sequence finished
+        setTimeout(() => {
+          hideSubtitle();
+          glossRing.classList.remove('visible');
+          state.demoRunning = false;
+          forceDemoBtn.disabled = false;
+          state.handFirstSeenAt = null;
+        }, 2000);
+        return;
+      }
+      const entry = DEMO_SEQUENCE[state.demoIndex++];
+      showSubtitle(entry);
+      state.demoTimeout = setTimeout(step, DEMO_INTERVAL_MS);
+    }
+    step();
+  }
+
+  function cancelDemoSequence() {
+    if (state.demoTimeout) {
+      clearTimeout(state.demoTimeout);
+      state.demoTimeout = null;
+    }
+    state.demoRunning = false;
+    forceDemoBtn.disabled = false;
+    glossRing.classList.remove('visible');
+  }
+
+  /* Button handler */
+  forceDemoBtn.addEventListener('click', () => {
+    cancelDemoSequence();
+    startDemoSequence();
+  });
+
+  retryBtn.addEventListener('click', () => {
+    permError.classList.remove('visible');
+    initCamera();
+  });
+
+  /* ─── HAND TRACKING UPDATE ────────────────── */
+  function updateHandState(detected, count, landmarks) {
+    state.handDetected  = detected;
+    state.handLandmarks = landmarks;
+
+    reticle.classList.toggle('active', detected);
+
+    if (detected) {
+      diagHand.textContent  = 'Yes';
+      diagHand.className    = 'diag-val ok';
+      diagHandCount.textContent = count;
+      diagHandCount.className   = 'diag-val ok';
+
+      // Trigger demo after 2s of hand presence
+      if (!state.demoRunning) {
+        if (!state.handFirstSeenAt) {
+          state.handFirstSeenAt = Date.now();
+        } else if (Date.now() - state.handFirstSeenAt >= 2000) {
+          startDemoSequence();
+        }
+      }
+
+      // Update status coords with wrist position
+      if (landmarks && landmarks[0]) {
+        const wrist = landmarks[0][0];
+        statusCoords.textContent = `Hand: (${(wrist.x * 100).toFixed(1)}%, ${(wrist.y * 100).toFixed(1)}%)`;
+      }
+    } else {
+      diagHand.textContent   = 'No';
+      diagHand.className     = 'diag-val off';
+      diagHandCount.textContent = '0';
+      diagHandCount.className   = 'diag-val off';
+      statusCoords.textContent  = 'Hand: —';
+      state.handFirstSeenAt = null;
+
+      if (!state.demoRunning) {
+        hideSubtitle();
+      }
+    }
+  }
+
+  /* ─── FPS & LATENCY SIMULATION ───────────────── */
+  function updateMetrics() {
+    state.frameCount++;
+    const now  = performance.now();
+    const diff = now - state.lastFpsTime;
+    if (diff >= 1000) {
+      state.fps = Math.round((state.frameCount / diff) * 1000);
+      state.frameCount  = 0;
+      state.lastFpsTime = now;
+      // Jitter latency for realism
+      state.latency = Math.round(14 + Math.random() * 8);
+      diagFps.textContent     = state.fps + ' FPS';
+      diagLatency.textContent = '~' + state.latency + 'ms';
+      fpsChip.textContent     = state.fps + ' FPS';
+    }
+  }
+
+  /* ─── ONRESULTS CALLBACK ──────────────────── */
+  function onResults(results) {
+    updateMetrics();
+
+    const W = canvasEl.width;
+    const H = canvasEl.height;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // 1. Draw mirrored video frame
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.translate(-W, 0);
+    ctx.drawImage(results.image, 0, 0, W, H);
+    ctx.restore();
+
+    const hasHands = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+    updateHandState(hasHands, hasHands ? results.multiHandLandmarks.length : 0, results.multiHandLandmarks);
+
+    if (hasHands) {
+      for (const landmarks of results.multiHandLandmarks) {
+        // Mirror landmarks for display
+        const mirroredLandmarks = landmarks.map(lm => ({ ...lm, x: 1 - lm.x }));
+
+        // Draw skeleton connectors
+        drawConnectors(ctx, mirroredLandmarks, Hands.HAND_CONNECTIONS, {
+          color: 'rgba(0, 245, 255, 0.85)',
+          lineWidth: 2.5,
+        });
+
+        // Draw landmark dots
+        drawLandmarks(ctx, mirroredLandmarks, {
+          color: '#00f5ff',
+          fillColor: 'rgba(0, 245, 255, 0.25)',
+          lineWidth: 1.5,
+          radius: (data) => {
+            // Fingertips larger
+            const tips = [4, 8, 12, 16, 20];
+            return tips.includes(data.index) ? 6 : 3.5;
+          },
+        });
+
+        // Draw glowing wrist circle
+        const wrist = mirroredLandmarks[0];
+        const wx = wrist.x * W;
+        const wy = wrist.y * H;
+        ctx.beginPath();
+        ctx.arc(wx, wy, 10, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 245, 255, 0.15)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 245, 255, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // AR finger-tip glow effects
+        const fingertipIndices = [4, 8, 12, 16, 20];
+        fingertipIndices.forEach(idx => {
+          const pt = mirroredLandmarks[idx];
+          const fx = pt.x * W;
+          const fy = pt.y * H;
+          const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 18);
+          grad.addColorStop(0, 'rgba(0, 245, 255, 0.55)');
+          grad.addColorStop(1, 'rgba(0, 245, 255, 0)');
+          ctx.beginPath();
+          ctx.arc(fx, fy, 18, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        });
+      }
+
+      // Overlay AR scanning effect on detected hands
+      ctx.strokeStyle = 'rgba(0, 245, 255, 0.12)';
+      ctx.lineWidth = 1;
+      for (let y = 0; y < H; y += 18) {
+        const scanOpacity = 0.03 + Math.random() * 0.02;
+        ctx.strokeStyle = `rgba(0, 245, 255, ${scanOpacity})`;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+    }
+
+    // Draw HUD corner marks directly on canvas
+    drawHUDOverlay(ctx, W, H, hasHands);
+  }
+
+  /* ─── HUD CANVAS OVERLAY ──────────────────── */
+  function drawHUDOverlay(ctx, W, H, handActive) {
+    const len  = 30;
+    const gapX = 20;
+    const gapY = 20;
+    const col  = handActive ? 'rgba(0, 245, 255, 0.7)' : 'rgba(0, 245, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+
+    // Top-right corner
+    ctx.beginPath();
+    ctx.moveTo(W - gapX - len, gapY);
+    ctx.lineTo(W - gapX,        gapY);
+    ctx.lineTo(W - gapX,        gapY + len);
+    ctx.stroke();
+
+    // Bottom-right corner
+    ctx.beginPath();
+    ctx.moveTo(W - gapX,        H - gapY - len);
+    ctx.lineTo(W - gapX,        H - gapY);
+    ctx.lineTo(W - gapX - len,  H - gapY);
+    ctx.stroke();
+  }
+
+  /* ─── MEDIAPIPE INIT ──────────────────────── */
+  let handsInstance = null;
+
+  async function initMediaPipe() {
+    loaderStatus.textContent = 'Loading MediaPipe Hands…';
+
+    handsInstance = new Hands({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+
+    handsInstance.setOptions({
+      maxNumHands:            2,
+      modelComplexity:        1,
+      minDetectionConfidence: 0.72,
+      minTrackingConfidence:  0.65,
+    });
+
+    handsInstance.onResults(onResults);
+
+    loaderStatus.textContent = 'MediaPipe ready. Requesting camera…';
+    statusMode.textContent = 'Tracking · MediaPipe Active';
+  }
+
+  /* ─── CAMERA INIT ─────────────────────────── */
+  async function initCamera() {
+    try {
+      loaderStatus.textContent = 'Requesting camera access…';
+
+      const camera = new Camera(videoEl, {
+        onFrame: async () => {
+          if (handsInstance) {
+            const t0 = performance.now();
+            await handsInstance.send({ image: videoEl });
+            // Minor latency update based on actual send time
+            const elapsed = performance.now() - t0;
+            if (elapsed > 5) {
+              state.latency = Math.round(elapsed);
+            }
+          }
+        },
+        width: 1280,
+        height: 720,
+      });
+
+      await camera.start();
+
+      // Dismiss splash after 500ms once camera is streaming
+      setTimeout(() => {
+        splashScreen.classList.add('hidden');
+        loaderStatus.textContent = 'Streaming…';
+        statusMode.textContent = 'Live Tracking · MediaPipe Active';
+      }, 600);
+
+    } catch (err) {
+      console.warn('Camera error:', err);
+      loaderStatus.textContent = 'Camera access denied.';
+      permError.classList.add('visible');
+
+      // Still dismiss full splash so Force Demo button is usable
+      setTimeout(() => splashScreen.classList.add('hidden'), 500);
+      statusMode.textContent = 'Camera offline · Demo mode';
+    }
+  }
+
+  /* ─── BOOTSTRAP ───────────────────────────── */
+  async function bootstrap() {
+    try {
+      await initMediaPipe();
+      await initCamera();
+    } catch (err) {
+      console.error('Bootstrap error:', err);
+      loaderStatus.textContent = 'Initialization error. Using demo mode.';
+      setTimeout(() => splashScreen.classList.add('hidden'), 1500);
+      statusMode.textContent = 'Demo mode';
+    }
+  }
+
+  /* ─── IDLE CANVAS ANIMATION (no camera) ──── */
+  function drawIdleFrame() {
+    const W = canvasEl.width;
+    const H = canvasEl.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Deep space background
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+    grad.addColorStop(0,   'rgba(0, 20, 35, 1)');
+    grad.addColorStop(0.5, 'rgba(0, 10, 18, 1)');
+    grad.addColorStop(1,   'rgba(2, 4, 8, 1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Animated grid
+    const now    = performance.now() / 1000;
+    const offset = (now * 20) % 40;
+    ctx.strokeStyle = 'rgba(0, 245, 255, 0.04)';
+    ctx.lineWidth   = 1;
+    for (let x = -40 + (offset % 40); x < W + 40; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = offset; y < H + 40; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Centre glow
+    const cGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 200);
+    cGrad.addColorStop(0, `rgba(0, 245, 255, ${0.04 + 0.02 * Math.sin(now * 1.5)})`);
+    cGrad.addColorStop(1, 'rgba(0, 245, 255, 0)');
+    ctx.fillStyle = cGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    drawHUDOverlay(ctx, W, H, false);
+    updateMetrics();
+    requestAnimationFrame(drawIdleFrame);
+  }
+
+  /* Start idle animation immediately, it'll be replaced by live frames once camera starts */
+  drawIdleFrame();
+
+  /* Kick off bootstrap */
+  bootstrap();
+
+})();
+</script>
+</body>
+</html>
