@@ -1081,14 +1081,48 @@
     handLandmarks:       null,
   };
 
-  /* ─── DEMO SEQUENCE ───────────────────────── */
-  const DEMO_SEQUENCE = [
-    { text: 'Initializing…',    conf: 42,  gloss: 'INIT'   },
-    { text: 'Hello',            conf: 97,  gloss: 'HELLO'  },
-    { text: 'My name is',       conf: 94,  gloss: 'NAME'   },
-    { text: 'Aman',             conf: 99,  gloss: 'AMAN'   },
-    { text: 'Do you need help?',conf: 91,  gloss: 'HELP?'  },
+  /* ─── DEMO SEQUENCE POOL ─────────────────── */
+  // Five hackathon-friendly scenarios — one is picked at random per trigger.
+  const DEMO_POOL = [
+    // Scenario 0 — Greeting
+    [
+      { text: 'Hello',             conf: 97, gloss: 'HELLO'   },
+      { text: 'It is nice',        conf: 93, gloss: 'NICE'    },
+      { text: 'To meet you',       conf: 95, gloss: 'MEET'    },
+      { text: 'Today.',            conf: 98, gloss: 'TODAY'   },
+    ],
+    // Scenario 1 — Navigation ask
+    [
+      { text: 'Excuse me',         conf: 96, gloss: 'EXCUSE'  },
+      { text: 'Can you tell me',   conf: 91, gloss: 'TELL'    },
+      { text: 'Where is',          conf: 94, gloss: 'WHERE'   },
+      { text: 'The main stage?',   conf: 92, gloss: 'STAGE'   },
+    ],
+    // Scenario 2 — Judge gratitude
+    [
+      { text: 'Thank you',         conf: 99, gloss: 'THANKS'  },
+      { text: 'For taking the time',conf: 90, gloss: 'TIME'   },
+      { text: 'To review',         conf: 93, gloss: 'REVIEW'  },
+      { text: 'Our project.',      conf: 97, gloss: 'PROJECT' },
+    ],
+    // Scenario 3 — Team intro
+    [
+      { text: 'We are',            conf: 98, gloss: 'WE'      },
+      { text: 'Team Future Builders', conf: 99, gloss: 'TEAM' },
+      { text: 'And this is',       conf: 95, gloss: 'THIS'    },
+      { text: 'Our MVP.',          conf: 97, gloss: 'MVP'     },
+    ],
+    // Scenario 4 — Assistance request
+    [
+      { text: 'Please',            conf: 96, gloss: 'PLEASE'  },
+      { text: 'Could you help me', conf: 92, gloss: 'HELP'    },
+      { text: 'Find',              conf: 94, gloss: 'FIND'    },
+      { text: 'A charging cable?', conf: 91, gloss: 'CABLE'   },
+    ],
   ];
+
+  // Tracks which scenario is currently running (set at sequence start).
+  let activeSequence = [];
   const DEMO_INTERVAL_MS = 1500;
 
   /* ─── CANVAS RESIZE ───────────────────────── */
@@ -1153,9 +1187,16 @@
     forceDemoBtn.disabled = true;
     glossRing.classList.add('visible');
 
+    // Pick a random scenario from the pool on every trigger.
+    const poolIndex   = Math.floor(Math.random() * DEMO_POOL.length);
+    activeSequence    = DEMO_POOL[poolIndex];
+
+    // Log to console so judges can confirm randomisation is live.
+    console.info(`[EdgeSign] Demo scenario ${poolIndex + 1}/${DEMO_POOL.length} selected.`);
+
     function step() {
-      if (state.demoIndex >= DEMO_SEQUENCE.length) {
-        // Sequence finished
+      if (state.demoIndex >= activeSequence.length) {
+        // Sequence finished — brief hold, then reset.
         setTimeout(() => {
           hideSubtitle();
           glossRing.classList.remove('visible');
@@ -1165,7 +1206,7 @@
         }, 2000);
         return;
       }
-      const entry = DEMO_SEQUENCE[state.demoIndex++];
+      const entry = activeSequence[state.demoIndex++];
       showSubtitle(entry);
       state.demoTimeout = setTimeout(step, DEMO_INTERVAL_MS);
     }
