@@ -22,7 +22,7 @@
 
 ## 🔴 The Problem — Why This Had to Be Built
 
-> **Every existing sign language tool forces the Deaf and Hard of Hearing community to look away from the person they're talking to.**
+> **Every existing sign language tool forces th Deaf and Hard of Hearing community to look away from the person they're talking to.**
 
 Current translation software is architected for cloud servers, not for humans. It streams raw video frames to remote inference endpoints — introducing **2–8 seconds of round-trip latency**, burning cellular data, and exposing sensitive biometric footage to third-party servers. The result is a broken conversational loop: a DHH individual must divide attention between the translator UI on a screen and the human in front of them. Natural eye contact — the very foundation of human connection — is shattered. **This is not a UX flaw. It is a fundamental architecture flaw.**
 
